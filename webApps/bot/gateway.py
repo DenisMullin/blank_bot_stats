@@ -1,14 +1,14 @@
 from aiogram.utils.i18n import FSMI18nMiddleware, I18n
 from aiogram.types import TelegramObject, User
 from aiogram import Dispatcher, Bot, Router
-from aiogram.fsm.storage.memory import MemoryStorage
 
 from typing import Callable, Dict, Any, Awaitable
+import logging
 
 from .handlers import handlers
-from .mics import path, registr
+from .mics import path, registr, PostgreSQLStorage
 
-from core.config import settings, project_folder
+from core.config import settings
 from core.container import Container
 
 
@@ -19,7 +19,9 @@ class Gateway():
         self.container = container
 
         self.bot = Bot(token=container.config.BOT_TOKEN)
-        self.dispatcher = Dispatcher(storage=MemoryStorage())
+        self.dispatcher = Dispatcher(
+            storage=PostgreSQLStorage(container.config.DATABASE_URL)
+        )
 
         lazy = I18n(
             path=path / "locales", default_locale="en", domain="messages"
@@ -50,6 +52,11 @@ class Gateway():
             await handler(event, data)
 
     async def host(self) -> None:
+        logging.basicConfig(
+            format='/%(name)s/%(levelname)s/%(asctime)s/  %(message)s',
+            level=logging.INFO,
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
         await self.container.reconnect()
         
         await self.bot.delete_webhook(drop_pending_updates=True)

@@ -1,0 +1,7 @@
+version: '3.8'
+
+services:
+  host:
+    build: .
+    restart: always
+    command: ["python", "./host.py"]

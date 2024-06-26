@@ -1,4 +1,4 @@
-from apps.bot.gateway import gateway
+from webApps.bot.gateway import gateway
 import asyncio
 
 
