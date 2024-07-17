@@ -52,101 +52,76 @@ class PostgreSQLStorage(BaseStorage):
         self.postgresql_url = postgresql_url
         self.key_builder = key_builder
 
-        self.postgresql_connection = None
+        self.pool = None
 
         self.json_loads = json_loads
         self.json_dumps = json_dumps
 
-    async def get_connection(self):
-        if self.postgresql_connection:
-            try:
-                await self.postgresql_connection.execute('SELECT 1')
-            except (asyncpg.exceptions.PostgresError, asyncpg.exceptions.InterfaceError):
-                await self.close()
-                self.postgresql_connection = None
+    async def get_pool(self):
+        if not self.pool:
+            self.pool = await asyncpg.create_pool(self.postgresql_url)
 
-        if not self.postgresql_connection:
-            self.postgresql_connection = await asyncpg.connect(
-                self.postgresql_url
-            )
-
-    async def ensure_exists(self, key: str) -> None:
-        memory_cache_model = {"key": "TEXT", "state": "TEXT", "data": "JSON"}
-        
-        memory_cache = await self.postgresql_connection.fetch(
-            "SELECT column_name, data_type FROM information_schema.columns "
-            "WHERE table_name = 'memory_cache';"
-        )
-
-        if not memory_cache:
-            await self.postgresql_connection.execute(
-                "CREATE TABLE memory_cache (key TEXT PRIMARY KEY, state TEXT, data JSON);"
-            )
-        else:
-            exists = {model_field['column_name']: model_field['data_type'].upper() for model_field in memory_cache}
-            for model_field, type in memory_cache_model.items():
-                if model_field not in exists or exists[model_field] != type:
-                    raise StructureError(
-                        f"Exists memory_cache with different structure."
-                    )
-        
-        result = await self.postgresql_connection.fetchval(
+    async def ensure_exists(self, postgresql_connection, key: str) -> None:
+        result = await postgresql_connection.fetchval(
             "SELECT 1 FROM memory_cache WHERE key = $1;", key)
         if not result:
             query = "INSERT INTO memory_cache (key, state, data) VALUES ($1, '', '{}');"
-            await self.postgresql_connection.execute(query, key)
+            await postgresql_connection.execute(query, key)
 
     async def close(self) -> None:
-        await self.postgresql_connection.close()
+        if self.pool:
+            await self.pool.close()
 
     async def set_state(self, key: StorageKey, state: StateType = None) -> None:
-        await self.get_connection()
+        await self.get_pool()
 
         postgres_key = self.key_builder.build(key)
-        await self.ensure_exists(postgres_key)
+        async with self.pool.acquire() as postgresql_connection:
+            await self.ensure_exists(postgresql_connection, postgres_key)
 
-
-        query = (
-            "INSERT INTO memory_cache (key, state, data) VALUES ($1, $2, '{}') "
-            "ON CONFLICT (key) DO UPDATE SET state = EXCLUDED.state;"
-        )
-        await self.postgresql_connection.execute(query, postgres_key, state.state if isinstance(state, State) else state)
+            query = (
+                "INSERT INTO memory_cache (key, state, data) VALUES ($1, $2, '{}') "
+                "ON CONFLICT (key) DO UPDATE SET state = EXCLUDED.state;"
+            )
+            await postgresql_connection.execute(query, postgres_key, state.state if isinstance(state, State) else state)
 
     async def get_state(self, key: StorageKey) -> Optional[str]:
-        await self.get_connection()
+        await self.get_pool()
 
         postgres_key = self.key_builder.build(key)
-        await self.ensure_exists(postgres_key)
+        async with self.pool.acquire() as postgresql_connection:
+            await self.ensure_exists(postgresql_connection, postgres_key)
 
-        result = await self.postgresql_connection.fetchval(
-            "SELECT state FROM memory_cache WHERE key = $1;", postgres_key
-        )
-        return result if result else None
+            result = await postgresql_connection.fetchval(
+                "SELECT state FROM memory_cache WHERE key = $1;", postgres_key
+            )
+            return result if result else None
 
     async def set_data(self, key: StorageKey, data: Dict[str, Any]) -> None:
-        await self.get_connection()
+        await self.get_pool()
 
         postgres_key = self.key_builder.build(key)
-        await self.ensure_exists(postgres_key)
+        async with self.pool.acquire() as postgresql_connection:
+            await self.ensure_exists(postgresql_connection, postgres_key)
 
-        query = (
-            "INSERT INTO memory_cache (key, state, data) VALUES ($1, '', $2::jsonb) "
-            "ON CONFLICT (key) DO UPDATE SET data = EXCLUDED.data;"
-        )
-        await self.postgresql_connection.execute(query, postgres_key, self.json_dumps(data))
+            query = (
+                "INSERT INTO memory_cache (key, state, data) VALUES ($1, '', $2::jsonb) "
+                "ON CONFLICT (key) DO UPDATE SET data = EXCLUDED.data;"
+            )
+            await postgresql_connection.execute(query, postgres_key, self.json_dumps(data))
 
     async def get_data(self, key: StorageKey) -> Dict[str, Any]:
-        await self.get_connection()
+        await self.get_pool()
 
         postgres_key = self.key_builder.build(key)
-        await self.ensure_exists(postgres_key)
+        async with self.pool.acquire() as postgresql_connection:
+            await self.ensure_exists(postgresql_connection, postgres_key)
 
-
-        result = await self.postgresql_connection.fetchval(
-            "SELECT data FROM memory_cache WHERE key = $1;", postgres_key)
-        if result:
-            return self.json_loads(result)
-        return {}
+            result = await postgresql_connection.fetchval(
+                "SELECT data FROM memory_cache WHERE key = $1;", postgres_key)
+            if result:
+                return self.json_loads(result)
+            return {}
 
 
 async def registr(

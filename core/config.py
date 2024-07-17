@@ -16,8 +16,6 @@ class Settings(metaclass=Singleton):
     DATABASE_URL: str = environ.get("DATABASE_URL")
 
     BOT_TOKEN: str = environ.get("BOT_TOKEN")
-
-    MODERATORS_CHAT_ID: int = int(environ.get("MODERATORS_CHAT_ID"))
     
     def __init__(self):
         if len(self.SENTRY_DSN) > 0:
