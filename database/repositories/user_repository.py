@@ -69,3 +69,18 @@ class UserRepository(Repository[User]):
         )
         
         return self.to_model(await self.database.fetch_one(query=query))
+
+    async def update_button(self, id: int, type: str) -> User | None:
+        if type == '5':
+            vals = {'button_pressed_5': True}
+        else:
+            vals = {'button_pressed_10': True}
+        query: Query = (
+            self.table
+            .update()
+            .where(id == self.table.c.id)
+            .values(**vals)
+            .returning(self.table)
+        )
+
+        return self.to_model(await self.database.fetch_one(query=query))

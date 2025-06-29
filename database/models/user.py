@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, BigInteger, DateTime, text
+from sqlalchemy import Column, String, BigInteger, DateTime, text, Boolean
 
 from .mics import Base
 
@@ -13,3 +13,5 @@ class User(Base):
     registration_date = Column(
         DateTime, server_default=text("timezone('utc', now())")
     )
+    button_pressed_5 = Column(Boolean, default=False)
+    button_pressed_10 = Column(Boolean, default=False)
