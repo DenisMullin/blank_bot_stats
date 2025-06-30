@@ -70,16 +70,45 @@ class UserRepository(Repository[User]):
         
         return self.to_model(await self.database.fetch_one(query=query))
 
-    async def update_button(self, id: int, type: str) -> User | None:
-        if type == '5':
-            vals = {'button_pressed_5': True}
-        else:
-            vals = {'button_pressed_10': True}
+    async def update_button(self, id: int) -> User | None:
         query: Query = (
             self.table
             .update()
             .where(id == self.table.c.id)
-            .values(**vals)
+            .values(sbp_pressed=True)
+            .returning(self.table)
+        )
+
+        return self.to_model(await self.database.fetch_one(query=query))
+
+    async def update_state(self, id: int, state: str) -> User | None:
+        query: Query = (
+            self.table
+            .update()
+            .where(id == self.table.c.id)
+            .values(state=state)
+            .returning(self.table)
+        )
+
+        return self.to_model(await self.database.fetch_one(query=query))
+
+    async def update_styles(self, id, style: str) -> User | None:
+        q: Query = self.table.select().where(
+            id == self.table.c.id
+        )
+        record = await self.database.fetch_one(q)
+        if not record:
+            return None
+
+        current_styles = record["styles"] or []
+        if style not in current_styles:
+            current_styles.append(style)
+
+        query: Query = (
+            self.table
+            .update()
+            .where(id == self.table.c.id)
+            .values(styles=current_styles)
             .returning(self.table)
         )
 
